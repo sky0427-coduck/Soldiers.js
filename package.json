@@ -2,9 +2,9 @@
   "name": "soldiers",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "server/server.js",
   "scripts": {
-    "dev": "node server.js"
+    "dev": "node server/server.js"
   },
   "keywords": [],
   "author": "",

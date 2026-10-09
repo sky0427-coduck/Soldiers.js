@@ -1,0 +1,1 @@
+1. Raspberry Pi 5 model B(Raspbian OS), WebGL can't render game.(UI can.) I guess 'cause chrome didn't use GPUs.
