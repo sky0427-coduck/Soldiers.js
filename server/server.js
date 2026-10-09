@@ -20,4 +20,18 @@ async function storeRanks(rows) { const grouped = new Map(); rows.forEach(row =>
 app.get('/api/ranks', async (req, res, next) => { try { res.json(await readRanks()); } catch (error) { next(error); } });
 app.post('/api/ranks', async (req, res, next) => { try { const name = clean(req.body.name); const mode = clean(req.body.mode, 12).toUpperCase(); const score = Math.max(0, Math.floor(Number(req.body.score) || 0)); const level = Math.min(3, Math.max(0, Math.floor(Number(req.body.level) || 0))) || '-'; if (!name || !['PRACTICE', 'CQB'].includes(mode)) return res.status(400).json({ error: 'Invalid record' }); const rows = await readRanks(); rows.push({ name, score, rank: 0, level: mode === 'PRACTICE' ? level : '-', mode, order: rows.reduce((max, row) => Math.max(max, row.order), 0) + 1 }); const saved = await storeRanks(rows); res.status(201).json(saved.filter(row => row.mode === mode).sort((a, b) => a.rank - b.rank)); } catch (error) { next(error); } });
 app.use((error, req, res, next) => { console.error(error); res.status(500).json({ error: 'Rank storage failed' }); });
-app.listen(PORT, () => console.log(`Soldiers : http://localhost:${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log(`Soldiers : http://localhost:${PORT} (PID ${process.pid})`);
+});
+
+server.on('error', error => {
+  console.error(`Server failed to listen on port ${PORT}:`, error);
+  process.exitCode = 1;
+});
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    console.log(`Received ${signal}; stopping Soldiers server.`);
+    server.close(() => process.exit(0));
+  });
+}
