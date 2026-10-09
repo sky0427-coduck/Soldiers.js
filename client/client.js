@@ -3,7 +3,7 @@ import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/
 import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js';
 
 const $ = (id) => document.getElementById(id);
-const ui = { landing: $('landing'), name: $('name-screen'), hud: $('hud'), result: $('result'), loader: $('loader'), nameInput: $('player-name'), mode: $('selected-mode'), timer: $('timer'), objective: $('objective'), level: $('level-banner'), crosshair: $('crosshair'), capture: $('capture'), captureBar: document.querySelector('#capture span'), hpBar: document.querySelector('#health i'), hp: document.querySelector('#health b'), weapon: $('weapon-name'), mag: $('magazine'), reserve: $('reserve'), reloads: document.querySelector('#ammo small'), resultMode: $('result-mode'), resultTitle: $('result-title'), resultScore: $('result-score'), ranks: $('rank-list') };
+const ui = { landing: $('landing'), name: $('name-screen'), hud: $('hud'), result: $('result'), loader: $('loader'), nameInput: $('player-name'), mode: $('selected-mode'), timer: $('timer'), objective: $('objective'), level: $('level-banner'), crosshair: $('crosshair'), hitmarker: $('hitmarker'), capture: $('capture'), captureBar: document.querySelector('#capture span'), hpBar: document.querySelector('#health i'), hp: document.querySelector('#health b'), weapon: $('weapon-name'), mag: $('magazine'), reserve: $('reserve'), reloads: document.querySelector('#ammo small'), resultMode: $('result-mode'), resultTitle: $('result-title'), resultScore: $('result-score'), ranks: $('rank-list') };
 const loader = new GLTFLoader(), objLoader = new OBJLoader();
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x6e7678);
@@ -28,6 +28,7 @@ let mode = 'practice', playerName = '', running = false, pointer = false, elapse
 let house = null, houseMeshes = [], floorCandidates = [], enemyTemplate = null, practiceGroup = null, practiceTarget = null, gunRoot = null, playerBody = null, currentGun = 'm1911', guns = {}, flags = [], enemies = [], healthOrbs = [], mapBox = new THREE.Box3(new THREE.Vector3(-28, 0, -28), new THREE.Vector3(28, 20, 28));
 const playerSize = new THREE.Vector3(.72, 1.8, .72), eyeHeight = 1.58;
 let verticalVelocity = 0, grounded = false;
+let aimPitch = 0, aimYaw = 0, recoilPitch = 0, recoilYaw = 0, gunKick = 0, aimHeld = false, hitmarkerTimeout = 0;
 const gunData = { m1911: { label: 'M1911', capacity: 12, damage: 9, reserve: 84 }, bren2: { label: 'BREN 2', capacity: 7, damage: 5, reserve: 49 } };
 let ammo = { m1911: 12, bren2: 7 }, reserves = { m1911: 84, bren2: 49 }, reloads = 2;
 
@@ -43,7 +44,7 @@ function lockPointer() { try { const request=renderer.domElement.requestPointerL
 async function start() {
   playerName = ui.nameInput.value.trim(); if (!playerName) { ui.nameInput.focus(); return; }
   lockPointer(); running = false; loading(true); resetWorld();
-  elapsed = 0; score = 0; level = 1; levelTime = 15; health = 14; captured = 0; captureTime = 0; reloads = 2; ammo = { m1911: 12, bren2: 7 }; reserves = { m1911: 84, bren2: 49 }; currentGun = 'm1911'; remaining = mode === 'practice' ? 45 : 150; verticalVelocity = 0; grounded = false;
+  elapsed = 0; score = 0; level = 1; levelTime = 15; health = 14; captured = 0; captureTime = 0; reloads = 2; ammo = { m1911: 12, bren2: 7 }; reserves = { m1911: 84, bren2: 49 }; currentGun = 'm1911'; remaining = mode === 'practice' ? 45 : 150; verticalVelocity = 0; grounded = false; aimPitch = 0; aimYaw = 0; recoilPitch = 0; recoilYaw = 0; gunKick = 0; aimHeld = false; clearTimeout(hitmarkerTimeout); ui.hitmarker.classList.remove('visible', 'kill');
   try { if (mode === 'practice') await createPractice(); else await createCQB(); await attachGun(); } catch (error) { console.warn(error); announce('모델 로딩 오류 — 대체 훈련 구역'); if (mode === 'practice') createPracticeFallback(); else createCQBFallback(); }
   loading(false); show(); setHUD(); updateUI(); running = true; lockPointer();
   if (mode === 'practice') announce('LEVEL 1');
@@ -81,7 +82,23 @@ function spawnOrb(seed) { const orb = new THREE.Mesh(new THREE.SphereGeometry(.1
 async function attachGun() { const group = new THREE.Group(); group.position.set(.32,-.28,-.55); group.rotation.set(-.08,-.23,0); camera.add(group); scene.add(camera); gunRoot = group; await changeGun('m1911'); }
 async function changeGun(name) { currentGun=name; if (!gunRoot) return; while(gunRoot.children.length) gunRoot.remove(gunRoot.children[0]); if (!guns[name]) { try { guns[name] = name === 'm1911' ? await objLoader.loadAsync('/models/weapon/guns/m1911/M1911.obj') : (await loader.loadAsync('/models/weapon/guns/bren2/bren2.glb')).scene; } catch { guns[name] = new THREE.Mesh(new THREE.BoxGeometry(.13,.13,.55),new THREE.MeshStandardMaterial({color:0x252525,metalness:.7,roughness:.3})); } } const weapon=guns[name].clone(true); weapon.scale.setScalar(name === 'm1911' ? .008 : .10); weapon.rotation.set(0,Math.PI,0); gunRoot.add(weapon); updateUI(); }
 function enemyRoot(object) { let node = object; while(node) { if(node.userData?.enemy) return node; node=node.parent; } return null; }
-function fire() { if (!running || !pointer || ammo[currentGun] <= 0) return; ammo[currentGun]--; gunRoot.position.z = -.48; setTimeout(()=>{if(gunRoot)gunRoot.position.z=-.55;},55); updateUI(); const origin=camera.getWorldPosition(v1), direction=camera.getWorldDirection(v2); raycaster.set(origin,direction); raycaster.far=180; const objects=mode==='cqb'?[...houseMeshes,...enemies]:[practiceTarget]; const hit=raycaster.intersectObjects(objects,true)[0]; if(!hit) return; if(mode==='practice') { score++; moveTarget(true); updateUI(); return; } const enemy=enemyRoot(hit.object); if(enemy) { enemy.userData.health-=gunData[currentGun].damage; if(enemy.userData.health<=0) killEnemy(enemy); } }
+function showHitmarker(kill = false) { clearTimeout(hitmarkerTimeout); ui.hitmarker.classList.toggle('kill', kill); ui.hitmarker.classList.remove('visible'); void ui.hitmarker.offsetWidth; ui.hitmarker.classList.add('visible'); hitmarkerTimeout = setTimeout(() => ui.hitmarker.classList.remove('visible', 'kill'), kill ? 230 : 155); }
+function fire() {
+  if (!running || !pointer || ammo[currentGun] <= 0) return;
+  ammo[currentGun]--;
+  const aimingScale = aimHeld ? .62 : 1;
+  recoilPitch = Math.min(recoilPitch + (currentGun === 'm1911' ? .024 : .038) * aimingScale, .105);
+  recoilYaw = THREE.MathUtils.clamp(recoilYaw + (Math.random() - .5) * (currentGun === 'm1911' ? .012 : .019) * aimingScale, -.035, .035);
+  gunKick = Math.min(gunKick + (currentGun === 'm1911' ? .72 : .9), 1.45);
+  updateUI();
+  const origin = camera.getWorldPosition(v1), direction = camera.getWorldDirection(v2);
+  raycaster.set(origin, direction); raycaster.far = 180;
+  const hit = raycaster.intersectObjects(mode === 'cqb' ? [...houseMeshes, ...enemies] : [practiceTarget], true)[0];
+  if (!hit) return;
+  if (mode === 'practice') { score++; showHitmarker(); moveTarget(true); updateUI(); return; }
+  const enemy = enemyRoot(hit.object);
+  if (enemy) { enemy.userData.health -= gunData[currentGun].damage; const killed = enemy.userData.health <= 0; showHitmarker(killed); if (killed) killEnemy(enemy); }
+}
 function killEnemy(enemy) { score+=3;enemies=enemies.filter(e=>e!==enemy);scene.remove(enemy);setTimeout(()=>{if(running&&mode==='cqb'&&enemyTemplate)spawnEnemy(enemyTemplate,Math.random());},500);updateUI(); }
 function moveTarget(hit=false) { if(!practiceTarget) return; if(level===2) return; if(level===3 && (hit || elapsed-practiceTarget.userData.lastMove>1.7)) { practiceTarget.position.x=(Math.random()-.5)*14;practiceTarget.position.y=2.2+Math.random()*4;practiceTarget.userData.lastMove=elapsed; } }
 function reload() { if(!running || reloads<=0 || ammo[currentGun]===gunData[currentGun].capacity || reserves[currentGun]<=0) return; const needed=gunData[currentGun].capacity-ammo[currentGun], added=Math.min(needed,reserves[currentGun]); ammo[currentGun]+=added;reserves[currentGun]-=added;reloads--;updateUI();announce('재장전 완료'); }
@@ -115,12 +132,12 @@ function captureFlag(flag) { flags=flags.filter(item=>item!==flag);scene.remove(
 function takeDamage(amount) { health-=amount;lastDamage=elapsed;updateUI();if(health<=0)finish(false); }
 async function finish(cleared) { if(!running)return;running=false;document.exitPointerLock?.();ui.hud.style.display='none';const isPractice=mode==='practice'; const title=isPractice?(cleared?'레벨 클리어!':'훈련 종료'):(cleared?'작전 성공':'실패ㅠㅠ');ui.resultMode.textContent=mode.toUpperCase();ui.resultTitle.textContent=title;ui.resultScore.textContent=isPractice?`명중 ${score}회 · 도달 레벨 ${level}`:`처치 점수 ${score}점 · 점령 ${captured} / 3`;show(ui.result);try{const response=await fetch('/api/ranks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:playerName,score,level:isPractice?level:0,mode:mode.toUpperCase()})});const rows=await response.json();ui.ranks.innerHTML=rows.slice(0,8).map(row=>`<li><span>${row.rank}. ${escapeHTML(row.name)} ${row.mode==='PRACTICE'?`· L${row.level}`:''}</span><span>${row.score}</span></li>`).join('');}catch{ui.ranks.innerHTML='<li><span>기록 저장에 실패했습니다.</span></li>';} }
 function escapeHTML(value){return String(value).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));}
-function tick() { requestAnimationFrame(tick); const dt=Math.min(clock.getDelta(),.05);if(running){elapsed+=dt;remaining-=dt;movePlayer(dt);if(mode==='practice'){if(level===2&&practiceTarget)practiceTarget.position.x=Math.sin(elapsed*2.4)*10;moveTarget(false);if(elapsed>=level*15&&level<3){level++;announce(`LEVEL ${level}`);}if(remaining<=0)finish(level===3);}else cqbTick(dt);updateUI();}renderer.render(scene,camera); }
+function tick() { requestAnimationFrame(tick); const dt=Math.min(clock.getDelta(),.05);if(running){elapsed+=dt;remaining-=dt;movePlayer(dt);recoilPitch *= Math.exp(-7.8*dt);recoilYaw *= Math.exp(-9.5*dt);gunKick *= Math.exp(-17*dt);camera.rotation.order='YXZ';camera.rotation.x=THREE.MathUtils.clamp(aimPitch+recoilPitch,-1.35,1.35);camera.rotation.y=aimYaw+recoilYaw;camera.rotation.z=THREE.MathUtils.clamp(recoilYaw*1.8,-.035,.035);const targetFov=aimHeld?48:72;camera.fov=THREE.MathUtils.damp(camera.fov,targetFov,12,dt);camera.updateProjectionMatrix();if(gunRoot){gunRoot.position.set(.32,-.28-gunKick*.075,-.55+gunKick*.2);gunRoot.rotation.set(-.08-gunKick*.12,-.23+recoilYaw*.25,0);}if(mode==='practice'){if(level===2&&practiceTarget)practiceTarget.position.x=Math.sin(elapsed*2.4)*10;moveTarget(false);if(elapsed>=level*15&&level<3){level++;announce(`LEVEL ${level}`);}if(remaining<=0)finish(level===3);}else cqbTick(dt);updateUI();}renderer.render(scene,camera); }
 document.querySelectorAll('.mode-button').forEach(button=>button.addEventListener('click',()=>{mode=button.dataset.mode;ui.mode.textContent=mode.toUpperCase();show(ui.name);ui.nameInput.focus();}));
 document.querySelector('.back').addEventListener('click',()=>show(ui.landing));$('begin-button').addEventListener('click',start);$('return-button').addEventListener('click',()=>{resetWorld();ui.hud.style.display='none';show(ui.landing);});
-document.addEventListener('pointerlockchange',()=>{pointer=document.pointerLockElement===renderer.domElement;});renderer.domElement.addEventListener('click',()=>{if(running&&!pointer)lockPointer();});
-document.addEventListener('mousemove',event=>{if(!pointer)return;camera.rotation.order='YXZ';camera.rotation.y-=event.movementX*.002;camera.rotation.x=Math.max(-1.35,Math.min(1.35,camera.rotation.x-event.movementY*.002));});
-document.addEventListener('mousedown',event=>{if(event.button===0)fire();if(event.button===2&&running){camera.fov=48;camera.updateProjectionMatrix();ui.crosshair.style.transform='translate(-50%,-50%) scale(.65)';}});document.addEventListener('mouseup',event=>{if(event.button===2){camera.fov=72;camera.updateProjectionMatrix();ui.crosshair.style.transform='translate(-50%,-50%)';}});document.addEventListener('contextmenu',event=>event.preventDefault());
+document.addEventListener('pointerlockchange',()=>{pointer=document.pointerLockElement===renderer.domElement;if(!pointer)aimHeld=false;});renderer.domElement.addEventListener('click',()=>{if(running&&!pointer)lockPointer();});
+document.addEventListener('mousemove',event=>{if(!pointer)return;aimYaw-=event.movementX*.002;aimPitch=THREE.MathUtils.clamp(aimPitch-event.movementY*.002,-1.35,1.35);});
+document.addEventListener('mousedown',event=>{if(event.button===0)fire();if(event.button===2&&running){aimHeld=true;ui.crosshair.style.transform='translate(-50%,-50%) scale(.65)';}});document.addEventListener('mouseup',event=>{if(event.button===2){aimHeld=false;ui.crosshair.style.transform='translate(-50%,-50%)';}});document.addEventListener('contextmenu',event=>event.preventDefault());
 document.addEventListener('keydown',event=>{if(event.code==='Space'){event.preventDefault();if(mode==='cqb'&&running&&grounded&&!event.repeat){verticalVelocity=6.2;grounded=false;} }keys.add(event.code);if(event.code==='KeyR')reload();if(event.code==='Digit1')changeGun('m1911');if(event.code==='Digit2')changeGun('bren2');});document.addEventListener('keyup',event=>keys.delete(event.code));
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 tick();
