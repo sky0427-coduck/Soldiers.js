@@ -5,8 +5,8 @@ import { OBJLoader } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/j
 const $ = (id) => document.getElementById(id);
 const ui = { landing: $('landing'), name: $('name-screen'), hud: $('hud'), result: $('result'), loader: $('loader'), nameInput: $('player-name'), mode: $('selected-mode'), timer: $('timer'), objective: $('objective'), level: $('level-banner'), crosshair: $('crosshair'), hitmarker: $('hitmarker'), damage: $('damage-vignette'), capture: $('capture'), captureBar: document.querySelector('#capture span'), hpBar: document.querySelector('#health i'), hp: document.querySelector('#health b'), weapon: $('weapon-name'), mag: $('magazine'), reserve: $('reserve'), reloads: document.querySelector('#ammo small'), resultMode: $('result-mode'), resultTitle: $('result-title'), resultScore: $('result-score'), ranks: $('rank-list') };
 const loader = new GLTFLoader(), objLoader = new OBJLoader();
-const gameAudio = { gunshot: new Audio('/sound/gunshot.ogg'), reload: new Audio('/sound/gunreload.ogg') };
-gameAudio.gunshot.preload = gameAudio.reload.preload = 'auto';
+const gameAudio = { gunshot: new Audio('/sound/gunshot.ogg'), reload: new Audio('/sound/gunreload.ogg'), emptyClick: new Audio('/sound/gun-click.ogg') };
+gameAudio.gunshot.preload = gameAudio.reload.preload = gameAudio.emptyClick.preload = 'auto';
 let reloadDurationMs = 3316;
 gameAudio.reload.addEventListener('loadedmetadata', () => { if (!reloading && Number.isFinite(gameAudio.reload.duration)) reloadDurationMs = gameAudio.reload.duration * 1000; });
 const scene = new THREE.Scene();
@@ -109,8 +109,10 @@ async function changeGun(name) {
 function enemyRoot(object) { let node = object; while(node) { if(node.userData?.enemy) return node; node=node.parent; } return null; }
 function showHitmarker(kill = false) { clearTimeout(hitmarkerTimeout); ui.hitmarker.classList.toggle('kill', kill); ui.hitmarker.classList.remove('visible'); void ui.hitmarker.offsetWidth; ui.hitmarker.classList.add('visible'); hitmarkerTimeout = setTimeout(() => ui.hitmarker.classList.remove('visible', 'kill'), kill ? 230 : 155); }
 function playGunshot() { const sound=gameAudio.gunshot;sound.pause();sound.currentTime=0;sound.volume=.68;sound.play().catch(()=>{}); }
+function playEmptyClick() { const sound=gameAudio.emptyClick;sound.pause();sound.currentTime=0;sound.volume=.7;sound.play().catch(()=>{}); }
 function fire() {
-  if (!running || !pointer || reloading || ammo[currentGun] <= 0) return;
+  if (!running || !pointer || reloading) return;
+  if (ammo[currentGun] <= 0) { playEmptyClick(); return; }
   playGunshot();
   ammo[currentGun]--;
   const aimingScale = aimHeld ? .62 : 1;
