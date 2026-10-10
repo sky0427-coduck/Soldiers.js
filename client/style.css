@@ -4,3 +4,11 @@
 #hitmarker i,#hitmarker b,#hitmarker em,#hitmarker strong { position:absolute; width:8px; height:2px; border-radius:1px; background:#f4f1e8; box-shadow:0 1px 3px #111; }
 #hitmarker i { left:3px; top:6px; transform:rotate(45deg); } #hitmarker b { left:17px; top:6px; transform:rotate(135deg); } #hitmarker em { left:3px; top:20px; transform:rotate(-45deg); } #hitmarker strong { left:17px; top:20px; transform:rotate(-135deg); }
 #hitmarker.visible { opacity:1; transform:translate(-50%,-50%) scale(1); } #hitmarker.kill i,#hitmarker.kill b,#hitmarker.kill em,#hitmarker.kill strong { background:#e1bc77; }
+#player-name { color:#111; caret-color:#111; }
+#player-name::placeholder { color:#686b68; opacity:1; }
+#level-banner.level-up { top:50%; right:auto; bottom:auto; left:50%; z-index:1; width:100%; color:#f6f2e7; font-size:clamp(30px,5vw,54px); letter-spacing:.18em; text-shadow:0 3px 18px #000,0 0 18px #fff6; transform:translate(-50%,-50%) scale(.82); transition:opacity .22s,transform .28s cubic-bezier(.2,.8,.2,1); }
+#level-banner.level-up.visible { opacity:1; transform:translate(-50%,-50%) scale(1); }
+#damage-vignette { position:absolute; inset:0; z-index:4; pointer-events:none; opacity:0; background:radial-gradient(ellipse at center,transparent 45%,rgba(120,8,10,.2) 72%,rgba(190,20,24,.78) 100%); }
+#damage-vignette.active { animation:damage-flash .72s ease-out forwards; }
+@keyframes damage-flash { 0% { opacity:.92; } 28% { opacity:.64; } 100% { opacity:0; } }
+#hud.reloading #crosshair,#hud.reloading #hitmarker { opacity:0; }
