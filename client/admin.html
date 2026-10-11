@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#242724">
+  <title>SOLDIERS · 운영자</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/">SOLDIERS <span>운영자 패널</span></a>
+      <div class="top-actions"><span id="connection"><i></i> 연결 중</span><button id="logout" class="quiet hidden">로그아웃</button></div>
+    </header>
+
+    <section id="login-view" class="login-card">
+      <p class="eyebrow">BOOTH OPERATIONS</p>
+      <h1>관리자 로그인</h1>
+      <p>서버를 실행한 터미널에 표시된 관리자 PIN을 입력하세요.</p>
+      <form id="login-form"><label for="pin">관리자 PIN</label><input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required><button class="primary">로그인</button></form>
+      <div id="login-error" class="error" role="status"></div>
+    </section>
+
+    <div id="dashboard" class="hidden">
+      <section class="summary-grid">
+        <article class="summary"><span>접속 스테이션</span><strong id="station-count">0</strong><small>15초 이내 신호 기준</small></article>
+        <article class="summary"><span>WAR 상태</span><strong id="war-phase">대기 중</strong><small id="war-players">플레이어 0 / 2</small></article>
+        <article class="summary"><span>서버 가동 시간</span><strong id="uptime">-</strong><small id="memory">메모리 -</small></article>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">LIVE SESSIONS</p><h2>접속 중인 PC</h2></div><span id="updated">-</span></div>
+        <div class="table-wrap"><table><thead><tr><th>스테이션</th><th>참가자</th><th>모드 / 맵</th><th>상태</th><th>연결</th><th></th></tr></thead><tbody id="stations"><tr><td colspan="6" class="empty">접속을 기다리는 중입니다.</td></tr></tbody></table></div>
+      </section>
+
+      <section class="panel war-panel">
+        <div class="section-heading"><div><p class="eyebrow">CO-OP STATUS</p><h2>WAR 매치</h2></div><button id="reset-war" class="danger">매치 초기화</button></div>
+        <div class="war-details"><div><span>현재 적</span><strong id="war-enemies">0</strong></div><div><span>보충</span><strong id="war-reinforcements">0 / 15</strong></div><div><span>진행 시간</span><strong id="war-time">00:00</strong></div><div><span>참가자</span><strong id="war-roster">-</strong></div></div>
+        <p class="note">WAR 초기화 또는 WAR 참가자의 시작화면 복귀는 같은 매치의 두 참가자 모두에게 적용됩니다.</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">VISITOR LINE</p><h2>방문객 대기열</h2></div><button id="next-visitor" class="secondary">다음 방문객</button></div>
+        <form id="queue-form" class="queue-form"><input id="visitor-name" maxlength="30" placeholder="방문객 이름 또는 별칭" required><button class="primary">대기열에 추가</button></form>
+        <ol id="queue-list" class="queue-list"><li class="empty">대기 중인 방문객이 없습니다.</li></ol>
+      </section>
+      <footer>이 패널은 접속 상태와 게임 세션만 관리합니다. 방문객 PC의 다른 앱이나 파일에는 접근하지 않습니다.</footer>
+    </div>
+  </main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/admin.js" defer></script>
+</body>
+</html>

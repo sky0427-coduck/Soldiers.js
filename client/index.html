@@ -21,8 +21,20 @@
         <div class="mode-actions">
           <button class="mode-button" data-mode="practice"><img src="/ICONS/practice_btn.png" alt="Practice" /><span>PRACTICE</span></button>
           <button class="mode-button" data-mode="cqb"><img src="/ICONS/CQB_btn.png" alt="CQB" /><span>CQB</span></button>
+          <button class="mode-button" data-mode="war"><span>WAR</span></button>
         </div>
         <p class="landing-note">개인 전투 숙련도 평가 시스템</p>
+      </section>
+      <section id="map-screen" class="screen panel-screen">
+        <div class="panel map-panel">
+          <p class="eyebrow">CQB MAP</p>
+          <h1>작전 지역 선택</h1>
+          <div class="map-options">
+            <button class="map-button" data-map="house_A"><strong>HOUSE A</strong><span>맵 A</span></button>
+            <button class="map-button" data-map="house_B"><strong>HOUSE B</strong><span>맵 B</span></button>
+          </div>
+          <button class="text-button map-back">돌아가기</button>
+        </div>
       </section>
       <section id="name-screen" class="screen panel-screen">
         <div class="panel">
@@ -36,6 +48,8 @@
       <section id="hud" aria-live="polite">
         <div id="damage-vignette" aria-hidden="true"></div>
         <div class="hud-top"><div id="timer">02:30</div><div id="objective">점령 0 / 3</div></div>
+        <div id="war-countdown" aria-live="assertive"></div>
+        <div id="war-scoreboard"></div>
         <div id="level-banner"></div>
         <div id="crosshair"><i></i><b></b><em></em><strong></strong></div>
         <div id="hitmarker" aria-hidden="true"><i></i><b></b><em></em><strong></strong></div>

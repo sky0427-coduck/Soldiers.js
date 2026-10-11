@@ -12,3 +12,16 @@
 #damage-vignette.active { animation:damage-flash .72s ease-out forwards; }
 @keyframes damage-flash { 0% { opacity:.92; } 28% { opacity:.64; } 100% { opacity:0; } }
 #hud.reloading #crosshair,#hud.reloading #hitmarker { opacity:0; }
+.map-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:0 0 8px; }
+.map-button { min-height:90px; border:1px solid #aeb2ad; background:#d8d8d0; color:#252925; cursor:pointer; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:7px; padding:15px; text-align:left; transition:background .16s,transform .16s; }
+.map-button:hover { background:#f4f2e9; transform:translateY(-2px); }
+.map-button strong { font-size:15px; letter-spacing:.12em; }
+.map-button span { font-size:12px; color:#69706c; }
+@media (max-width:600px) { .map-options { grid-template-columns:1fr; } }
+.mode-button[data-mode="war"] { justify-content:center; background:#b8b8b1; }
+.mode-button[data-mode="war"] span { width:100%; text-align:center; font-size:18px; letter-spacing:.2em; }
+#war-countdown { display:none; position:absolute; z-index:2; left:50%; top:50%; transform:translate(-50%,-50%); color:#f4f1e8; font-size:clamp(64px,13vw,136px); font-weight:800; text-shadow:0 4px 24px #000b; }
+#war-countdown.visible { display:block; }
+#war-countdown.waiting { font-size:clamp(14px,2vw,22px); font-weight:600; letter-spacing:.12em; white-space:nowrap; }
+#war-scoreboard { display:none; position:absolute; top:74px; left:28px; color:#f1eee5; font-size:12px; line-height:1.65; text-shadow:0 2px 4px #000; white-space:pre-line; }
+#hud.war-mode #war-scoreboard { display:block; }

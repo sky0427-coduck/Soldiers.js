@@ -1,8 +1,11 @@
-123 | 41 | 1 | 3 | PRACTICE | 2
-test3 | 33 | 2 | 3 | PRACTICE | 4
-1,2,3 | 31 | 3 | 3 | PRACTICE | 1
-1111111111 | 31 | 4 | 3 | PRACTICE | 3
-test6 | 21 | 5 | 3 | PRACTICE | 6
-test9 | 21 | 6 | 3 | PRACTICE | 7
-test4 | 16 | 7 | 3 | PRACTICE | 5
-test10 | 0 | 1 | - | CQB | 8
+# SOLDIERS_RANK_V2
+test7 | 21 | 24 | 45 | PRACTICE + CQB | 1 | 6 | 3
+1 | 21 | 15 | 36 | PRACTICE + CQB | 2 | 9 | 3
+test2 | 21 | 12 | 33 | PRACTICE + CQB | 3 | 2 | 3
+응아니야 | 21 | - | 21 | PRACTICE | 4 | 7 | 3
+ㅋㅋㅋ | 21 | - | 21 | PRACTICE | 5 | 8 | 3
+test5 | - | 12 | 12 | CQB | 6 | 4 | -
+test1 | - | 6 | 6 | CQB | 7 | 1 | -
+test4 | - | 6 | 6 | CQB | 8 | 3 | -
+test6 | - | 6 | 6 | CQB | 9 | 5 | -
+a | - | 0 | 0 | CQB | 10 | 10 | -
