@@ -12,6 +12,25 @@ loader.setMeshoptDecoder(MeshoptDecoder);
 THREE.Cache.enabled = true;
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+const menuMusic = new Audio('/sound/Military.ogg');
+menuMusic.loop = true;
+menuMusic.volume = 0.35;
+
+function show(...screens) {
+  document.querySelectorAll('.screen').forEach(item => item.classList.remove('active'));
+  screens.forEach(item => item.classList.add('active'));
+
+  if (screens.includes(ui.landing)) {
+    menuMusic.play().catch(() => {
+      // 브라우저가 사용자 입력 전 자동재생을 막을 수 있음
+    });
+  } else {
+    menuMusic.pause();
+    menuMusic.currentTime = 0;
+  }
+}
+
 const gameAudio = { gunshot: new Audio('/sound/gunshot.ogg'), reload: new Audio('/sound/gunreload.ogg'), emptyClick: new Audio('/sound/gun-click.ogg'), ricochet: [new Audio('/sound/ricochet1.ogg'),new Audio('/sound/ricochet2.ogg')] };
 gameAudio.gunshot.preload = gameAudio.reload.preload = gameAudio.emptyClick.preload = 'auto';
 for(const sound of gameAudio.ricochet)sound.preload='auto';
@@ -48,29 +67,31 @@ const warMovementKeys = new Set();
 let mode = 'practice', selectedMap = 'house_A', playerName = '', running = false, pointer = false, elapsed = 0, score = 0, level = 1, levelHits = 0, health = 14, remaining = 0, captureTime = 0, captured = 0, lastDamage = 0, matchGeneration = 0;
 let operatorReturnRequested = false;
 let house = null, houseMeshes = [], floorCandidates = [], enemyTemplate = null, practiceGroup = null, practiceTarget = null, gunRoot = null, shieldRoot = null, grenadeRoot = null, playerBody = null, currentGun = 'm1911', guns = {}, flags = [], enemies = [], healthOrbs = [], grenades = [], heldItem = 'gun', shieldCharges = 3, grenadeCount = 2, mapBox = new THREE.Box3(new THREE.Vector3(-28, 0, -28), new THREE.Vector3(28, 20, 28));
-let warFloorRange = null, warLastSafePosition = null;
-const warRequiredHeadroom = 2.05;
+let warFloorRange = null, warLastSafePosition = null, warActorHeight = 1.38, warPlayerHeight = 1.38, warCrouched = false;
+let warRequiredHeadroom = 2.05;
 let warSocket = null, warState = null, warPhase = 'waiting', warMyId = '', warSpawnInitialized = false, warLastInputAt = 0, warResultShown = false;
 const warRemotePlayers = new Map(), warProjectiles = [], warBlastEffects = [];
 const houseAssets = new Map(), sharedAssets = { enemy: null, flag: null, shield: null, grenade: null };
 const grenadeWorld = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
 grenadeWorld.allowSleep = true;
-const playerSize = new THREE.Vector3(.58, 1.38, .58), eyeHeight = 1.26;
+const playerSize = new THREE.Vector3(.58, 1.38, .58);
+let eyeHeight = 1.26;
 // Keep actor meshes a little above the collision surface so thin GLB floor
 // triangles and floating-point rounding never leave their feet below it.
 const actorGroundClearance = .08;
 let verticalVelocity = 0, grounded = false;
 let aimPitch = 0, aimYaw = 0, recoilPitch = 0, recoilYaw = 0, gunKick = 0, aimHeld = false, hitmarkerTimeout = 0, announceTimeout = 0, damageTimeout = 0;
 let reloading = false, reloadStage = '', reloadStartedAt = 0, reloadTimer = 0, reloadPending = null, reloadEndedHandler = null, reloadErrorHandler = null;
+let leftMouseHeld = false, autoFireTimer = 0;
 const reloadStartPosition = new THREE.Vector3(), reloadCenterPosition = new THREE.Vector3(0, 0, -.9), reloadRestScale = new THREE.Vector3(1, 1, 1), reloadLargeScale = new THREE.Vector3(1.75, 1.75, 1.75), reloadStartQuaternion = new THREE.Quaternion(), reloadSideQuaternion = new THREE.Quaternion(), reloadStartScale = new THREE.Vector3();
-const gunData = { m1911: { label: 'M1911', capacity: 12, damage: 9, reserve: 84 }, bren2: { label: 'BREN 2', capacity: 7, damage: 5, reserve: 49 } };
-let ammo = { m1911: 12, bren2: 7 }, reserves = { m1911: 84, bren2: 49 }, reloads = 2;
+const gunData = { m1911: { label: 'M1911', capacity: 12, damage: 9, reserve: 84 }, bren2: { label: 'BREN 2', capacity: 15, damage: 5, reserve: 105 } };
+let ammo = { m1911: 12, bren2: 15 }, reserves = { m1911: 84, bren2: 105 }, reloads = 2;
 
 function show(...screens) { document.querySelectorAll('.screen').forEach(item => item.classList.remove('active')); screens.forEach(item => item.classList.add('active')); }
 function loading(showing) { ui.loader.classList.toggle('show', showing); }
 function resetWorld() { if(warSocket){warSocket.close();warSocket=null;}warMovementKeys.clear();keys.clear();scene.fog=new THREE.Fog(0x6e7678,42,170);warState=null;warPhase='waiting';warMyId='';warSpawnInitialized=false;warResultShown=false;warFloorRange=null;warLastSafePosition=null;for(const remote of warRemotePlayers.values())scene.remove(remote.model);warRemotePlayers.clear();for(const shot of warProjectiles){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();}warProjectiles.length=0;for(const effect of warBlastEffects){scene.remove(effect.mesh);effect.mesh.geometry.dispose();effect.mesh.material.dispose();}warBlastEffects.length=0;for (const child of [...scene.children]) if (child !== scene.children[0] && child !== scene.children[1]) scene.remove(child); while(camera.children.length)camera.remove(camera.children[0]);for(const grenade of grenades)grenadeWorld.removeBody(grenade.body);grenades=[]; house = null; houseMeshes = []; floorCandidates = []; enemyTemplate = null; practiceGroup = null; practiceTarget = null; playerBody = null; flags = []; enemies = []; healthOrbs = []; gunRoot = null; shieldRoot = null; grenadeRoot = null; guns = {}; heldItem='gun'; }
 function setHUD() { ui.hud.style.display = 'block'; ui.hud.classList.toggle('war-mode',mode==='war');ui.crosshair.style.display = 'block'; ui.objective.style.display = 'block'; $('health').style.display = mode !== 'practice' ? 'flex' : 'none';ui.warCountdown.classList.remove('visible'); }
-function updateUI() { if(mode==='war'){const seconds=warState?.elapsed||0;ui.timer.textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}.${Math.floor((seconds%1)*10)}`;ui.objective.textContent=`적 ${warState?.totalKills||0} / 20 · 보충 ${warState?.reinforcements||0} / 15`;if(warState){const me=warState.players.find(player=>player.id===warMyId);if(me){health=me.hp;shieldCharges=me.shieldCharges;grenadeCount=me.grenades;ammo={...ammo,...me.ammo};reserves={...reserves,...me.reserve};ui.hp.textContent=health;ui.hpBar.style.width=`${health/14*100}%`;}}ui.warScoreboard.textContent=(warState?.players||[]).map(player=>`${player.name}   ${player.kills} K   HP ${player.hp}`).join('\n');}else{const mins = Math.floor(Math.max(0, remaining) / 60), secs = Math.ceil(Math.max(0, remaining) % 60); ui.timer.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`; ui.objective.textContent = mode === 'practice' ? `명중 ${levelHits} / 7` : `점령 ${captured} / 3`;ui.hp.textContent=health;ui.hpBar.style.width=`${(health/14)*100}%`;} if(heldItem==='shield'){ui.weapon.textContent='POLICE SHIELD';ui.mag.textContent=shieldCharges;ui.reserve.textContent='3';ui.reloads.textContent='방어 횟수';}else if(heldItem==='grenade'){ui.weapon.textContent='GRENADE';ui.mag.textContent=grenadeCount;ui.reserve.textContent='2';ui.reloads.textContent='우클릭 투척';}else{const data = gunData[currentGun]; ui.weapon.textContent = data.label; ui.mag.textContent = ammo[currentGun]; ui.reserve.textContent = mode==='war'?'∞':reserves[currentGun]; ui.reloads.textContent = reloading ? '재장전 중' : mode==='war' ? '재장전 제한 없음' : `재장전 ${reloads}`;} }
+function updateUI() { if(mode==='war'){const seconds=warState?.elapsed||0;ui.timer.textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(Math.floor(seconds%60)).padStart(2,'0')}.${Math.floor((seconds%1)*10)}`;ui.objective.textContent=`적 ${warState?.totalKills||0} / 20 · 보충 ${warState?.reinforcements||0} / 15`;if(warState){const me=warState.players.find(player=>player.id===warMyId);if(me){health=me.hp;shieldCharges=me.shieldCharges;grenadeCount=me.grenades;ammo={...ammo,...me.ammo};reserves={...reserves,...me.reserve};ui.hp.textContent=health;ui.hpBar.style.width=`${health/20*100}%`;}}ui.warScoreboard.textContent=(warState?.players||[]).map(player=>`${player.name}   ${player.kills} K   HP ${player.hp}`).join('\n');}else{const mins = Math.floor(Math.max(0, remaining) / 60), secs = Math.ceil(Math.max(0, remaining) % 60); ui.timer.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`; ui.objective.textContent = mode === 'practice' ? `명중 ${levelHits} / 7` : `점령 ${captured} / 3`;ui.hp.textContent=health;ui.hpBar.style.width=`${(health/14)*100}%`;} if(heldItem==='shield'){ui.weapon.textContent='POLICE SHIELD';ui.mag.textContent=shieldCharges;ui.reserve.textContent='3';ui.reloads.textContent='방어 횟수';}else if(heldItem==='grenade'){ui.weapon.textContent='GRENADE';ui.mag.textContent=grenadeCount;ui.reserve.textContent='2';ui.reloads.textContent='우클릭 투척';}else{const data = gunData[currentGun]; ui.weapon.textContent = data.label; ui.mag.textContent = ammo[currentGun]; ui.reserve.textContent = mode==='war'?'∞':reserves[currentGun]; ui.reloads.textContent = reloading ? '재장전 중' : mode==='war' ? '재장전 제한 없음' : `재장전 ${reloads}`;} }
 function announce(text, levelUp = false) { clearTimeout(announceTimeout); ui.level.textContent = text; ui.level.classList.toggle('level-up', levelUp); ui.level.classList.remove('visible'); void ui.level.offsetWidth; ui.level.classList.add('visible'); announceTimeout = setTimeout(() => ui.level.classList.remove('visible', 'level-up'), 1400); }
 function setPointer(active) { pointer = active; if (!active && running) document.exitPointerLock?.(); }
 function lockPointer() { try { const request=renderer.domElement.requestPointerLock?.(); if(request?.catch) request.catch(()=>{}); } catch {} }
@@ -92,7 +113,7 @@ async function start() {
   operatorReturnRequested = false;
   const thisMatch = ++matchGeneration;
   lockPointer(); running = false; loading(true); resetWorld();
-  cancelReload(); elapsed = 0; score = 0; level = 1; levelHits = 0; health = 14; captured = 0; captureTime = 0; reloads = 2; ammo = { m1911: 12, bren2: 7 }; reserves = { m1911: 84, bren2: 49 }; currentGun = 'm1911'; heldItem='gun';shieldCharges=3;grenadeCount=2; remaining = mode === 'practice' ? 45 : 150; verticalVelocity = 0; grounded = false; aimPitch = 0; aimYaw = 0; recoilPitch = 0; recoilYaw = 0; gunKick = 0; aimHeld = false; clearTimeout(hitmarkerTimeout); clearTimeout(announceTimeout); clearTimeout(damageTimeout); ui.hitmarker.classList.remove('visible', 'kill'); ui.level.classList.remove('visible', 'level-up'); ui.damage.classList.remove('active');
+  stopAutoFire();cancelReload(); elapsed = 0; score = 0; level = 1; levelHits = 0; health = mode==='war'?20:14; captured = 0; captureTime = 0; reloads = 2; ammo = { m1911: 12, bren2: 15 }; reserves = { m1911: 84, bren2: 105 }; currentGun = 'm1911'; heldItem='gun';shieldCharges=3;grenadeCount=2; remaining = mode === 'practice' ? 55 : 150; playerSize.set(.58,1.38,.58);eyeHeight=1.26;warActorHeight=1.38;warPlayerHeight=1.38;warCrouched=false;warRequiredHeadroom=2.05;verticalVelocity = 0; grounded = false; aimPitch = 0; aimYaw = 0; recoilPitch = 0; recoilYaw = 0; gunKick = 0; aimHeld = false; clearTimeout(hitmarkerTimeout); clearTimeout(announceTimeout); clearTimeout(damageTimeout); ui.hitmarker.classList.remove('visible', 'kill'); ui.level.classList.remove('visible', 'level-up'); ui.damage.classList.remove('active');
   try { if (mode === 'practice') await createPractice(); else if(mode==='cqb') await createCQB(); else await createWar(); await attachGun(); } catch (error) { console.warn(error);running=false;loading(false);if(mode==='war'){warSocket?.close();warSocket=null;scene.fog=new THREE.Fog(0x6e7678,42,170);ui.mode.textContent=`WAR · ${error.message||'서버/맵 연결 실패'}`;show(ui.name);return;}announce('모델 로딩 오류 — 대체 훈련 구역'); if (mode === 'practice') createPracticeFallback(); else createCQBFallback(); }
   if (thisMatch !== matchGeneration || operatorReturnRequested) { loading(false); return; }
   loading(false); show(); setHUD(); updateUI(); running = true; lockPointer();
@@ -125,17 +146,22 @@ async function createCQB() {
   await makeFlags(); await makeEnemies(); await makeOrbs();
 }
 async function createWar() {
-  house=await loadHouseModel('theater');
+  house=await loadHouseModel('arena');
   const rawBox=new THREE.Box3().setFromObject(house),center=rawBox.getCenter(new THREE.Vector3());
-  // The replacement GLB is exported as a ~2 m miniature. Uniformly scale the
-  // *actual* asset to a human-sized arena; no collision floor is fabricated.
+  // Scale the supplied arena to the game world; all walking/collision surfaces
+  // still come directly from this mesh (no artificial ground is added).
   const sourceSize=rawBox.getSize(new THREE.Vector3()),mapScale=36/Math.max(sourceSize.x,sourceSize.z,.01);
   house.scale.setScalar(mapScale);house.position.copy(center).multiplyScalar(-mapScale);house.rotation.y=0;scene.add(house);house.updateMatrixWorld(true);
   mapBox.setFromObject(house);houseMeshes=houseMeshList(house);
+  // The earlier half-map-height ratio made both sides oversized; WAR actors
+  // now use a quarter of the normalized map height (half their previous size).
+  warActorHeight=Math.max(.1,(mapBox.max.y-mapBox.min.y)*.25);warPlayerHeight=warActorHeight;
+  eyeHeight=warPlayerHeight*.9;playerSize.set(warActorHeight*.38,warPlayerHeight,warActorHeight*.38);
+  warRequiredHeadroom=warActorHeight+.18;
   await optimizeStaticMap(houseMeshes);
   floorCandidates=findWarWalkableSurfaces();
-  if(floorCandidates.length<12)throw new Error('극장 맵에서 넓고 연속된 실제 경기장 바닥을 찾지 못했습니다.');
-  const spawn=floorCandidates[Math.floor(Math.random()*floorCandidates.length)].clone();
+  if(floorCandidates.length<12)throw new Error('arena 맵에서 플레이어 크기에 맞는 연속된 실제 바닥을 찾지 못했습니다.');
+  const spawn=findArenaSignSpawn()||floorCandidates[Math.floor(Math.random()*floorCandidates.length)].clone();
   setPlayerPosition(spawn);aimYaw=Math.atan2(spawn.x,spawn.z);aimPitch=0;camera.rotation.set(0,aimYaw,0,'YXZ');
   const enemyAsset=await loadSharedModel('enemy','/models/enemy.glb',enemyFallback);enemyTemplate=enemyAsset.clone(true);
   enemyTemplate.traverse(node=>{if(!node.isMesh)return;const shade=material=>{const copy=material.clone();copy.color.multiplyScalar(.78);return copy;};node.material=Array.isArray(node.material)?node.material.map(shade):shade(node.material);});
@@ -148,7 +174,7 @@ function styleWarMap(root) {
 function joinWar() {
   return new Promise((resolve,reject)=>{
     const scheme=location.protocol==='https:'?'wss':'ws';warSocket=new WebSocket(`${scheme}://${location.host}/war`);let settled=false;const timeout=setTimeout(()=>{if(!settled){settled=true;reject(new Error('WAR server timeout'));}},12000);
-    warSocket.addEventListener('open',()=>{const count=Math.min(160,floorCandidates.length),samples=Array.from({length:count},(_,index)=>floorCandidates[Math.floor(index*(floorCandidates.length-1)/Math.max(1,count-1))]).map(point=>({x:point.x,y:point.y,z:point.z}));warSocket.send(JSON.stringify({type:'join',data:{name:playerName,floorPoints:samples}}));});
+    warSocket.addEventListener('open',()=>{const preferred=findArenaSignSpawn()||floorCandidates[0],count=Math.min(159,floorCandidates.length),samples=[preferred,...Array.from({length:count},(_,index)=>floorCandidates[Math.floor(index*(floorCandidates.length-1)/Math.max(1,count-1))])].map(point=>({x:point.x,y:point.y,z:point.z}));warSocket.send(JSON.stringify({type:'join',data:{name:playerName,actorHeight:warActorHeight,crouched:false,preferredSpawn:{x:preferred.x,y:preferred.y,z:preferred.z},floorPoints:samples}}));});
     warSocket.addEventListener('message',event=>{
       let packet;try{packet=JSON.parse(event.data);}catch{return;}
       if(packet.type==='error'){clearTimeout(timeout);settled=true;reject(new Error(packet.data?.message||'WAR join failed'));return;}
@@ -165,6 +191,12 @@ function joinWar() {
       else if(packet.type==='enemy-shot')receiveEnemyShot(packet.data);
       else if(packet.type==='blast')showWarBlast(packet.data);
       else if(packet.type==='ammo'){ammo[packet.data.weapon]=packet.data.magazine;reserves[packet.data.weapon]=packet.data.reserve;reloads=packet.data.reloads;updateUI();}
+      else if(packet.type==='fire-result'){
+        const target=enemies.find(enemy=>enemy.userData.warId===packet.data.enemyId);
+        if(target&&Number.isFinite(packet.data.hp))target.userData.health=packet.data.hp;
+        if(packet.data.hit)showHitmarker(packet.data.killed);
+        else if(packet.data.enemyId)playRicochet();
+      }
     });
     warSocket.addEventListener('error',()=>{if(!settled){settled=true;clearTimeout(timeout);reject(new Error('WAR WebSocket connection failed'));}});
     warSocket.addEventListener('close',event=>{if(event.code===4001){returnToLandingByOperator();return;}if(running&&mode==='war'&&warPhase!=='finished'){announce('서버 연결이 끊겼습니다');running=false;}});
@@ -176,7 +208,7 @@ function handleWarState(state) {
   if(me){if(!warMyId)warMyId=me.id;if(!warSpawnInitialized&&(state.phase==='waiting'||state.phase==='countdown'))warSpawnInitialized=true;if(oldHp!==undefined&&me.hp<oldHp)flashDamage();if(heldItem==='shield'&&me.shieldCharges<=0)stowHeldItem();}
   const wanted=new Set();for(const data of state.enemies){wanted.add(data.id);let enemy=enemies.find(item=>item.userData.warId===data.id);if(!enemy){enemy=createWarEnemy(data);enemies.push(enemy);scene.add(enemy);}enemy.userData.netTarget.set(data.x,data.y+actorGroundClearance,data.z);enemy.rotation.y=data.yaw;enemy.userData.health=data.hp;}
   for(const enemy of [...enemies])if(enemy.userData.warId&&!wanted.has(enemy.userData.warId)){scene.remove(enemy);enemies=enemies.filter(item=>item!==enemy);}
-  const remoteIds=new Set();for(const player of state.players){if(player.id===warMyId)continue;remoteIds.add(player.id);let remote=warRemotePlayers.get(player.id);if(!remote){const model=createWarAvatar(player.name);remote={model,target:new THREE.Vector3(player.x,player.y+actorGroundClearance,player.z),yaw:player.yaw};warRemotePlayers.set(player.id,remote);scene.add(model);}remote.target.set(player.x,player.y+actorGroundClearance,player.z);remote.yaw=player.yaw;}
+  const remoteIds=new Set();for(const player of state.players){if(player.id===warMyId)continue;remoteIds.add(player.id);let remote=warRemotePlayers.get(player.id);if(!remote){const model=createWarAvatar(player.name);remote={model,target:new THREE.Vector3(player.x,player.y+actorGroundClearance,player.z),yaw:player.yaw,actorHeight:player.actorHeight||warActorHeight};warRemotePlayers.set(player.id,remote);scene.add(model);}remote.target.set(player.x,player.y+actorGroundClearance,player.z);remote.yaw=player.yaw;remote.actorHeight=player.actorHeight||warActorHeight;}
   for(const [id,remote] of warRemotePlayers)if(!remoteIds.has(id)){scene.remove(remote.model);warRemotePlayers.delete(id);}
   if(state.phase==='waiting'){ui.warCountdown.classList.remove('visible');ui.warCountdown.textContent='';}
   if(state.phase==='countdown'){ui.warCountdown.classList.add('visible');const count=Math.max(1,Math.ceil((state.countdownEndsAt-Date.now())/1000));ui.warCountdown.textContent=String(count);}
@@ -184,14 +216,26 @@ function handleWarState(state) {
   if(state.phase==='finished')finishWar(state.result||'VICTORY');updateUI();
 }
 function createWarEnemy(data) {
-  const model=enemyTemplate.clone(true);model.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3()),scale=1.25/Math.max(size.y,.01);model.scale.multiplyScalar(scale);model.position.add(new THREE.Vector3(-center.x*scale,-box.min.y*scale,-center.z*scale));const root=new THREE.Group();root.add(model);root.position.set(data.x,data.y+actorGroundClearance,data.z);root.rotation.y=data.yaw;root.userData.enemy=true;root.userData.warId=data.id;root.userData.health=data.hp;root.userData.netTarget=new THREE.Vector3(root.position.x,root.position.y,root.position.z);root.traverse(node=>{if(node.isMesh){node.castShadow=false;node.userData.enemyRoot=root;}});return root;
+  const model=enemyTemplate.clone(true);model.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(model),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3()),scale=warActorHeight/Math.max(size.y,.01);model.scale.multiplyScalar(scale);model.position.add(new THREE.Vector3(-center.x*scale,-box.min.y*scale,-center.z*scale));const root=new THREE.Group();root.add(model);root.position.set(data.x,data.y+actorGroundClearance,data.z);root.rotation.y=data.yaw;root.userData.enemy=true;root.userData.warId=data.id;root.userData.health=data.hp;root.userData.netTarget=new THREE.Vector3(root.position.x,root.position.y,root.position.z);root.traverse(node=>{if(node.isMesh){node.castShadow=false;node.userData.enemyRoot=root;}});return root;
 }
-function createWarAvatar(name='ALLY') { const group=new THREE.Group(),material=new THREE.MeshStandardMaterial({color:0x486c8c,emissive:0x172839,emissiveIntensity:.28,roughness:.82}),body=new THREE.Mesh(new THREE.CapsuleGeometry(.24,.72,3,7),material),head=new THREE.Mesh(new THREE.SphereGeometry(.19,8,6),new THREE.MeshStandardMaterial({color:0xb88969,roughness:.86}));body.position.y=.57;head.position.y=1.16;group.add(body,head);const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;const context=canvas.getContext('2d');context.fillStyle='rgba(19,26,28,.82)';context.fillRect(4,5,248,54);context.fillStyle='#e6e0d2';context.font='600 27px system-ui, sans-serif';context.textAlign='center';context.textBaseline='middle';context.fillText(String(name).slice(0,18),128,32);const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));label.position.y=1.72;label.scale.set(1.45,.36,1);group.add(label);return group; }
+function createWarAvatar(name='ALLY') { const h=warActorHeight,r=h*.15,group=new THREE.Group(),material=new THREE.MeshStandardMaterial({color:0x486c8c,emissive:0x172839,emissiveIntensity:.28,roughness:.82}),body=new THREE.Mesh(new THREE.CapsuleGeometry(r,h*.7,3,7),material),head=new THREE.Mesh(new THREE.SphereGeometry(r*.78,8,6),new THREE.MeshStandardMaterial({color:0xb88969,roughness:.86}));body.position.y=h*.42;head.position.y=h*.88;group.add(body,head);const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;const context=canvas.getContext('2d');context.fillStyle='rgba(19,26,28,.82)';context.fillRect(4,5,248,54);context.fillStyle='#e6e0d2';context.font='600 27px system-ui, sans-serif';context.textAlign='center';context.textBaseline='middle';context.fillText(String(name).slice(0,18),128,32);const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthWrite:false}));label.position.y=h*1.05;label.scale.set(h*1.05,h*.26,1);group.add(label);return group; }
 function receiveEnemyShot(data) { const geometry=new THREE.SphereGeometry(.055,6,5),material=new THREE.MeshBasicMaterial({color:0xffd48a}),mesh=new THREE.Mesh(geometry,material);mesh.position.set(data.origin.x,data.origin.y,data.origin.z);scene.add(mesh);warProjectiles.push({id:data.id,targetId:data.targetId,origin:new THREE.Vector3(data.origin.x,data.origin.y,data.origin.z),direction:new THREE.Vector3(data.direction.x,data.direction.y,data.direction.z),distance:data.distance,speed:data.speed||34,traveled:0,mesh,resolved:false}); }
 function showWarBlast(data) { const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshBasicMaterial({color:0xffb34f,transparent:true,opacity:.62,depthWrite:false,wireframe:true}));mesh.position.set(data.x,data.y,data.z);mesh.scale.setScalar(.2);scene.add(mesh);warBlastEffects.push({mesh,started:performance.now(),duration:560}); }
-function finishWar(outcome) { if(warResultShown)return;warResultShown=true;warPhase='finished';running=false;cancelReload();document.exitPointerLock?.();ui.hud.style.display='none';ui.resultMode.textContent='WAR · THEATER';ui.resultTitle.textContent=outcome==='VICTORY'?'작전 성공':outcome==='DEFEAT'?'작전 실패':'매치 종료';const elapsedTime=warState?.elapsed||0,kills=warState?.players.reduce((sum,player)=>sum+player.kills,0)||0;ui.resultScore.textContent=`${Math.floor(elapsedTime/60)}:${String(Math.floor(elapsedTime%60)).padStart(2,'0')} · 팀 처치 ${kills} / 20`;ui.ranks.innerHTML='<li><span>기록 저장</span><span>rank_war.txt</span></li>';show(ui.result); }
+function finishWar(outcome) { if(warResultShown)return;warResultShown=true;warPhase='finished';running=false;cancelReload();document.exitPointerLock?.();ui.hud.style.display='none';ui.resultMode.textContent='WAR · ARENA';ui.resultTitle.textContent=outcome==='VICTORY'?'작전 성공':outcome==='DEFEAT'?'작전 실패':'매치 종료';const elapsedTime=warState?.elapsed||0,kills=warState?.players.reduce((sum,player)=>sum+player.kills,0)||0;ui.resultScore.textContent=`${Math.floor(elapsedTime/60)}:${String(Math.floor(elapsedTime%60)).padStart(2,'0')} · 팀 처치 ${kills} / 20`;ui.ranks.innerHTML='<li><span>기록 저장</span><span>rank_war.txt</span></li>';show(ui.result); }
 function createCQBFallback() { floorPlane(140); const shell = new THREE.Mesh(new THREE.BoxGeometry(55, 5, 55), new THREE.MeshBasicMaterial({ color:0x4b5252, wireframe:true })); shell.position.y = 2.5; scene.add(shell); mapBox.set(new THREE.Vector3(-27, 0, -27), new THREE.Vector3(27, 8, 27)); houseMeshes = [shell]; floorCandidates = []; for(let x=-20;x<=20;x+=5)for(let z=-20;z<=20;z+=5)floorCandidates.push(new THREE.Vector3(x,0,z)); setPlayerPosition(new THREE.Vector3(0,0,8)); camera.rotation.set(0,0,0); makeFlags(); makeEnemies(); makeOrbs(); }
 function setPlayerPosition(feetPosition) { const feet=feetPosition.clone();feet.y+=actorGroundClearance;if(playerBody)scene.remove(playerBody);playerBody=new THREE.Mesh(new THREE.BoxGeometry(playerSize.x,playerSize.y,playerSize.z),new THREE.MeshBasicMaterial({color:0xe9e7df,transparent:true,opacity:.08,depthWrite:false}));playerBody.position.set(feet.x,feet.y+playerSize.y/2,feet.z);playerBody.userData.player=true;scene.add(playerBody);camera.position.set(feet.x,feet.y+eyeHeight,feet.z);grounded=true;verticalVelocity=0;camera.userData.capturePosition=feet.clone(); }
+function setWarCrouched(crouched) {
+  if(mode!=='war'||!running||warPhase==='finished'||warCrouched===crouched)return;
+  const feet=feetPosition();
+  warCrouched=crouched;
+  warPlayerHeight=warActorHeight*(warCrouched ? 0.75 : 1);
+  playerSize.y=warPlayerHeight;
+  eyeHeight=warPlayerHeight*.9;
+  warRequiredHeadroom=warPlayerHeight+.18;
+  camera.position.y=feet.y+eyeHeight+actorGroundClearance;
+  if(playerBody){playerBody.geometry.dispose();playerBody.geometry=new THREE.BoxGeometry(playerSize.x,playerSize.y,playerSize.z);playerBody.position.set(camera.position.x,feet.y+actorGroundClearance+playerSize.y/2,camera.position.z);}
+  sendWar('input',{x:feet.x,y:feet.y-actorGroundClearance,z:feet.z,yaw:aimYaw,pitch:aimPitch,crouched:warCrouched,actorHeight:warPlayerHeight,visibleEnemies:[]});
+}
 function isWalkableHit(hit, headroom=1.52) {
   if(!hit.face)return false;
   const normal=hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
@@ -201,10 +245,8 @@ function isWalkableHit(hit, headroom=1.52) {
   return !ceiling||ceiling.distance>=headroom-.04;
 }
 function findInteriorFloors() { const candidates=[],spanX=mapBox.max.x-mapBox.min.x,spanZ=mapBox.max.z-mapBox.min.z,height=mapBox.max.y-mapBox.min.y,up=new THREE.Vector3(0,1,0),down=new THREE.Vector3(0,-1,0);for(let ix=1;ix<10;ix++)for(let iz=1;iz<10;iz++){const x=mapBox.min.x+spanX*ix/10,z=mapBox.min.z+spanZ*iz/10;raycaster.set(new THREE.Vector3(x,mapBox.max.y+3,z),down);raycaster.far=height+8;const hits=raycaster.intersectObjects(houseMeshes,false);for(const hit of hits){if(!isWalkableHit(hit))continue;candidates.push(hit.point.clone());break;}}return candidates; }
-// theater.glb is exported as one merged mesh, so mesh names/material groups
-// cannot distinguish arena floor from seating. Sample the lowest valid indoor
-// surface per column, then keep only the largest connected, near-level region.
-// This selects a real floor patch from the supplied model without adding a plane.
+// arena.glb is one merged mesh. Sample actual upward-facing triangles, then
+// retain its largest connected, near-level surface without adding a floor.
 function findWarWalkableSurfaces() {
   const spanX=mapBox.max.x-mapBox.min.x,spanZ=mapBox.max.z-mapBox.min.z,height=mapBox.max.y-mapBox.min.y;
   const columns=72,stepX=spanX/(columns+1),stepZ=spanZ/(columns+1),down=new THREE.Vector3(0,-1,0),cells=new Array(columns*columns);
@@ -214,7 +256,7 @@ function findWarWalkableSurfaces() {
     let lowest=null;
     for(const hit of raycaster.intersectObjects(houseMeshes,false)){
       if(lowest&&hit.point.y>=lowest.y-.02)continue;
-      if(!isWalkableHit(hit,warRequiredHeadroom)||!warBodyHasClearance(hit.point)||!warFloorHasFooting(hit.point)||!warHasIndoorCover(hit.point))continue;
+      if(!isWalkableHit(hit,warRequiredHeadroom)||!warBodyHasClearance(hit.point)||!warFloorHasFooting(hit.point))continue;
       lowest=hit.point;
     }
     if(lowest)cells[ix*columns+iz]={ix,iz,x,y:lowest.y,z};
@@ -248,13 +290,26 @@ function findWarWalkableSurfaces() {
   warFloorRange={min:arena.minY-.24,max:arena.maxY+.24};
   return arena.cells.map(point=>new THREE.Vector3(point.x,point.y,point.z));
 }
+function findArenaSignSpawn() {
+  // The arena GLB is a single merged mesh with its entrance sign baked into
+  // the texture. The sign sits at the front edge; use the actual sampled floor
+  // points nearest that edge, never a guessed y-coordinate or a helper plane.
+  if(!floorCandidates.length)return null;
+  const center=mapBox.getCenter(new THREE.Vector3()),horizontal=mapBox.getSize(new THREE.Vector3());
+  const candidates=floorCandidates.filter(point=>Math.abs(point.x-center.x)<horizontal.x*.24);
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>b.z-a.z);
+  const frontZ=candidates[0].z,frontBand=candidates.filter(point=>point.z>=frontZ-horizontal.z*.07);
+  const spawn=frontBand[Math.floor(frontBand.length/2)];
+  return spawn?.clone()||null;
+}
 function warBodyHasClearance(floorPoint) {
-  const origin=new THREE.Vector3(floorPoint.x,floorPoint.y+.2,floorPoint.z),directions=8,heights=[0,.62,1.2];
+  const bodyRadius=playerSize.x*.5,origin=new THREE.Vector3(floorPoint.x,floorPoint.y+.12,floorPoint.z),directions=8,heights=[.08,warActorHeight*.34,warActorHeight*.72];
   for(let index=0;index<directions;index++){
     const angle=index*Math.PI*2/directions,direction=new THREE.Vector3(Math.cos(angle),0,Math.sin(angle));
     for(const height of heights){
-      raycaster.set(origin.clone().add(new THREE.Vector3(0,height,0)),direction);raycaster.far=.62;
-      const obstruction=intersectFirst(houseMeshes).find(hit=>hit.distance>.035&&hit.distance<.57&&hit.face&&hit.face.normal.clone().transformDirection(hit.object.matrixWorld).dot(direction)<-.08);
+      raycaster.set(origin.clone().add(new THREE.Vector3(0,height,0)),direction);raycaster.far=bodyRadius+.08;
+      const obstruction=intersectFirst(houseMeshes).find(hit=>hit.distance>.035&&hit.distance<bodyRadius+.04&&hit.face&&hit.face.normal.clone().transformDirection(hit.object.matrixWorld).dot(direction)<-.08);
       if(obstruction)return false;
     }
   }
@@ -262,40 +317,16 @@ function warBodyHasClearance(floorPoint) {
 }
 function warFloorHasFooting(floorPoint) {
   let support=0;
-  // Check a human-width footprint around the candidate. Seat cushions and
-  // narrow props can be upward-facing triangles, but they are not a stable
-  // arena floor and must not become spawn/support surfaces.
-  for(const [dx,dz] of [[-.62,0],[.62,0],[0,-.62],[0,.62]]){
-    raycaster.set(new THREE.Vector3(floorPoint.x+dx,floorPoint.y+.38,floorPoint.z+dz),new THREE.Vector3(0,-1,0));raycaster.far=.82;
-    const hit=intersectFirst(houseMeshes).find(candidate=>candidate.face&&candidate.point.y>=floorPoint.y-.34&&candidate.point.y<=floorPoint.y+.18&&candidate.face.normal.clone().transformDirection(candidate.object.matrixWorld).y>=.78);
+  // Check the full actor footprint. Narrow upward-facing props are not stable
+  // support surfaces and must not become spawn/landing points.
+  const radius=playerSize.x*.5;
+  for(const [dx,dz] of [[-radius,0],[radius,0],[0,-radius],[0,radius]]){
+    raycaster.set(new THREE.Vector3(floorPoint.x+dx,floorPoint.y+.24,floorPoint.z+dz),new THREE.Vector3(0,-1,0));raycaster.far=.62;
+    const hit=intersectFirst(houseMeshes).find(candidate=>candidate.face&&candidate.point.y>=floorPoint.y-.28&&candidate.point.y<=floorPoint.y+.12&&candidate.face.normal.clone().transformDirection(candidate.object.matrixWorld).y>=.78);
     if(hit)support++;
   }
   // Require a broad patch on the supplied GLB mesh, not an invented plane.
   return support>=3;
-}
-function warHasIndoorCover(floorPoint) {
-  const height=mapBox.max.y-mapBox.min.y;raycaster.set(floorPoint.clone().add(new THREE.Vector3(0,.12,0)),new THREE.Vector3(0,1,0));raycaster.far=Math.min(28,height+.5);
-  // Reject exposed roof/ledge surfaces: a valid arena spawn must be inside
-  // the supplied theater mesh, beneath its actual roof/ceiling geometry.
-  return intersectFirst(houseMeshes).some(hit=>hit.distance>1.52&&hit.distance<raycaster.far);
-}
-function findSlightlyLowerWarFloor(spawn) {
-  // Some theater meshes expose a raised/ceiling-like surface as the sampled
-  // spawn floor. Prefer a nearby, lower walkable surface when one is present.
-  raycaster.set(new THREE.Vector3(spawn.x,spawn.y-.08,spawn.z),new THREE.Vector3(0,-1,0));
-  raycaster.far=.95;
-  const hits=raycaster.intersectObjects(houseMeshes,false);
-  for(const hit of hits) {
-    if(!hit.face||hit.point.y>spawn.y-.14)continue;
-    const normal=hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-    if(normal.y<.72)continue;
-    raycaster.set(hit.point.clone().add(new THREE.Vector3(0,.12,0)),new THREE.Vector3(0,1,0));
-    raycaster.far=1.85;
-    const ceiling=raycaster.intersectObjects(houseMeshes,false)[0];
-    if(ceiling&&ceiling.distance<1.72)continue;
-    return hit.point.clone();
-  }
-  return spawn;
 }
 function floorPoint(point) { if(!houseMeshes.length)return new THREE.Vector3(point.x,0,point.z);raycaster.set(new THREE.Vector3(point.x,mapBox.max.y+3,point.z),new THREE.Vector3(0,-1,0));raycaster.far=mapBox.max.y-mapBox.min.y+8;const hits=raycaster.intersectObjects(houseMeshes,false);const floor=hits.find(hit=>hit.face&&hit.face.normal.clone().transformDirection(hit.object.matrixWorld).y>.68&&hit.point.y<=mapBox.min.y+(mapBox.max.y-mapBox.min.y)*.72);return floor?.point||null; }
 function intersectFirst(objects) { raycaster.firstHitOnly=true;try{return raycaster.intersectObjects(objects,true);}finally{raycaster.firstHitOnly=false;} }
@@ -371,6 +402,16 @@ function showHitmarker(kill = false) { clearTimeout(hitmarkerTimeout); ui.hitmar
 function playGunshot() { const sound=gameAudio.gunshot;sound.pause();sound.currentTime=0;sound.volume=.68;sound.play().catch(()=>{}); }
 function playEmptyClick() { const sound=gameAudio.emptyClick;sound.pause();sound.currentTime=0;sound.volume=.7;sound.play().catch(()=>{}); }
 function playRicochet() { const sound=gameAudio.ricochet[Math.random()<.5?0:1];sound.pause();sound.currentTime=0;sound.volume=.52;sound.play().catch(()=>{}); }
+function stopAutoFire() { leftMouseHeld=false;if(autoFireTimer){clearInterval(autoFireTimer);autoFireTimer=0;} }
+function startAutoFire() {
+  stopAutoFire();leftMouseHeld=true;
+  if(currentGun!=='bren2'||ammo.bren2<=0)return;
+  autoFireTimer=setInterval(()=>{
+    if(!leftMouseHeld||currentGun!=='bren2'||heldItem!=='gun'||reloading||!running){stopAutoFire();return;}
+    if(ammo.bren2<=0){playEmptyClick();stopAutoFire();return;}
+    fire();
+  },130);
+}
 function fire() {
   if (!running || (mode!=='war'&&!pointer) || reloading || heldItem!=='gun'||(mode==='war'&&(warPhase!=='running'||health<=0))) return;
   if (ammo[currentGun] <= 0) { playEmptyClick(); return; }
@@ -386,13 +427,13 @@ function fire() {
   const shootableEnemies=mode==='war'?enemies.filter(enemy=>camera.position.distanceTo(enemy.position)<88):enemies;
   const hit = intersectFirst(mode === 'cqb'||mode==='war' ? [...houseMeshes, ...shootableEnemies] : [practiceTarget])[0];
   if (!hit) {if(mode==='war')sendWar('fire',{weapon:currentGun,targetId:'',origin:{x:origin.x,y:origin.y,z:origin.z},direction:{x:direction.x,y:direction.y,z:direction.z},wallDistance:250});return;}
-  if (mode === 'practice') { score++; levelHits++; showHitmarker(); moveTarget(true); if(levelHits >= 7) { if(level < 3) { level++; levelHits = 0; announce(`LEVEL ${level}`, true); } else { updateUI(); finish(true); return; } } updateUI(); return; }
+  if (mode === 'practice') { score++; levelHits++; showHitmarker(); moveTarget(true); if(levelHits >= 7) { if(level < 5) { level++; levelHits = 0; announce(`LEVEL ${level}`, true); } else { updateUI(); finish(true); return; } } updateUI(); return; }
   const enemy = enemyRoot(hit.object);
-  if(mode==='war'){const wallDistance=intersectFirst(houseMeshes)[0]?.distance??250;sendWar('fire',{weapon:currentGun,targetId:enemy?.userData.warId||'',origin:{x:origin.x,y:origin.y,z:origin.z},direction:{x:direction.x,y:direction.y,z:direction.z},wallDistance});if(enemy){showHitmarker(false);}else playRicochet();return;}
+  if(mode==='war'){const wallDistance=intersectFirst(houseMeshes)[0]?.distance??250;sendWar('fire',{weapon:currentGun,targetId:enemy?.userData.warId||'',origin:{x:origin.x,y:origin.y,z:origin.z},direction:{x:direction.x,y:direction.y,z:direction.z},wallDistance});if(!enemy)playRicochet();return;}
   if (enemy) { enemy.userData.health -= gunData[currentGun].damage; const killed = enemy.userData.health <= 0; showHitmarker(killed); if (killed) killEnemy(enemy); }
 }
 function killEnemy(enemy) { score+=3;enemies=enemies.filter(e=>e!==enemy);scene.remove(enemy);const generation=matchGeneration;setTimeout(()=>{if(running&&mode==='cqb'&&enemyTemplate&&generation===matchGeneration)spawnEnemy(enemyTemplate,Math.random());},2000);updateUI(); }
-function moveTarget(hit=false) { if(!practiceTarget) return; if(level===2) return; if(level===3 && (hit || elapsed-practiceTarget.userData.lastMove>1.7)) { practiceTarget.position.x=(Math.random()-.5)*14;practiceTarget.position.y=2.2+Math.random()*4;practiceTarget.userData.lastMove=elapsed; } }
+function moveTarget(hit=false) { if(!practiceTarget) return; if(level===1||level===2)return;const interval=level>=5?1.05:1.7;if((hit||elapsed-practiceTarget.userData.lastMove>interval)&&(level===3||level===4||level===5)){practiceTarget.position.x=(Math.random()-.5)*(level>=4?18:14);practiceTarget.position.y=2.2+Math.random()*(level>=4?5:4);practiceTarget.userData.lastMove=elapsed;} }
 function reload() {
   if (!running || (mode==='war'&&(warPhase!=='running'||health<=0)) || heldItem!=='gun' || reloading || (mode!=='war'&&reloads<=0) || ammo[currentGun] === gunData[currentGun].capacity || (mode!=='war'&&reserves[currentGun]<=0) || !gunRoot) return;
   gameAudio.gunshot.pause();
@@ -524,9 +565,9 @@ function moveWarPlayer(dt) {
     for(const axis of ['x','z']){
       const step=new THREE.Vector3(axis==='x'?wish.x:0,0,axis==='z'?wish.z:0);if(!step.lengthSq())continue;
       const next=feet.clone().add(step);if(next.x<mapBox.min.x||next.x>mapBox.max.x||next.z<mapBox.min.z||next.z>mapBox.max.z)continue;
-      const direction=step.clone().normalize(),bodyCenter=new THREE.Vector3(camera.position.x,camera.position.y-.58,camera.position.z);let blockedRays=0;
-      for(const height of [.12,.62,1.12]){
-        raycaster.set(bodyCenter.clone().add(new THREE.Vector3(0,height,0)),direction);raycaster.far=step.length()+playerSize.x*.48;
+      const direction=step.clone().normalize(),bodyCenter=new THREE.Vector3(camera.position.x,camera.position.y-eyeHeight+warPlayerHeight*.5,camera.position.z);let blockedRays=0;
+      for(const height of [.08,warPlayerHeight*.38,warPlayerHeight*.78]){
+        raycaster.set(bodyCenter.clone().add(new THREE.Vector3(0,height-warPlayerHeight*.5,0)),direction);raycaster.far=step.length()+playerSize.x*.48;
         const obstruction=intersectFirst(houseMeshes).find(hit=>hit.distance>.06&&hit.distance<raycaster.far&&hit.face&&hit.face.normal.clone().transformDirection(hit.object.matrixWorld).dot(direction)<-.12);
         if(obstruction)blockedRays++;
       }
@@ -552,7 +593,7 @@ function moveWarPlayer(dt) {
     // only below the player misses the floor once a slow frame has already
     // moved the camera through that triangle.
     const sweepTop=Math.max(previousFeet.y,currentFeet.y)+.22,sweepDepth=Math.max(.36,previousFeet.y-currentFeet.y+.44);
-    const supportOffsets=[[0,0],[-.2,-.2],[.2,-.2],[-.2,.2],[.2,.2]],supportHits=[];
+    const supportRadius=playerSize.x*.3,supportOffsets=[[0,0],[-supportRadius,-supportRadius],[supportRadius,-supportRadius],[-supportRadius,supportRadius],[supportRadius,supportRadius]],supportHits=[];
     for(const [offsetX,offsetZ] of supportOffsets){
       raycaster.set(new THREE.Vector3(currentFeet.x+offsetX,sweepTop,currentFeet.z+offsetZ),new THREE.Vector3(0,-1,0));raycaster.far=sweepDepth;
       const hit=raycaster.intersectObjects(houseMeshes,false).find(candidate=>candidate.face&&candidate.point.y<=previousFeet.y+.2&&candidate.point.y>=currentFeet.y-.24&&isWarArenaFloor(candidate.point.y)&&isWalkableHit(candidate,warRequiredHeadroom));
@@ -581,23 +622,23 @@ function warTick(dt) {
   else if(warPhase==='countdown'){ui.warCountdown.classList.remove('waiting');const seconds=Math.max(1,Math.ceil(((warState?.countdownEndsAt||Date.now())-Date.now())/1000));ui.warCountdown.textContent=String(seconds);ui.warCountdown.classList.add('visible');}
   else if(warPhase==='running'){ui.warCountdown.classList.remove('visible','waiting');}
   for(const enemy of enemies)if(enemy.userData.warId){enemy.position.lerp(enemy.userData.netTarget,Math.min(1,dt*12));}
-  for(const remote of warRemotePlayers.values()){remote.model.position.lerp(remote.target,Math.min(1,dt*12));remote.model.rotation.y=THREE.MathUtils.damp(remote.model.rotation.y,remote.yaw,10,dt);}
+  for(const remote of warRemotePlayers.values()){remote.model.position.lerp(remote.target,Math.min(1,dt*12));remote.model.rotation.y=THREE.MathUtils.damp(remote.model.rotation.y,remote.yaw,10,dt);remote.model.scale.y=remote.actorHeight/(remote.model.userData.baseHeight||warActorHeight);}
   for(const shot of [...warProjectiles]){
     const from=shot.mesh.position.clone(),step=Math.min(shot.speed*dt,shot.distance-shot.traveled),to=from.clone().addScaledVector(shot.direction,step);let blocked=false;
-    if(step>0){raycaster.set(from,shot.direction);raycaster.far=step+.025;const wall=intersectFirst(houseMeshes)[0],wallDistance=wall?.distance??Infinity;let playerDistance=Infinity;if(shot.targetId===warMyId){const target=camera.position.clone().add(new THREE.Vector3(0,-.48,0)),along=target.clone().sub(from).dot(shot.direction),closest=from.clone().addScaledVector(shot.direction,along);if(along>=0&&along<=step&&closest.distanceTo(target)<.34)playerDistance=along;}if(playerDistance<wallDistance){sendWar('enemy-impact',{shotId:shot.id,hit:true});shot.resolved=true;}else if(wall){blocked=true;playRicochet();}}
+    if(step>0){raycaster.set(from,shot.direction);raycaster.far=step+.025;const wall=intersectFirst(houseMeshes)[0],wallDistance=wall?.distance??Infinity;let playerDistance=Infinity;if(shot.targetId===warMyId){const feetY=camera.position.y-eyeHeight-actorGroundClearance;for(const fraction of [.18,.5,.82]){const target=new THREE.Vector3(camera.position.x,feetY+warPlayerHeight*fraction,camera.position.z),along=target.clone().sub(from).dot(shot.direction);if(along<0||along>step)continue;const closest=from.clone().addScaledVector(shot.direction,along);if(closest.distanceTo(target)<=playerSize.x*.55+.06)playerDistance=Math.min(playerDistance,along);}}if(playerDistance<wallDistance){sendWar('enemy-impact',{shotId:shot.id,hit:true});shot.resolved=true;}else if(wall){blocked=true;playRicochet();}}
     if(!blocked)shot.mesh.position.copy(to);shot.traveled+=Math.max(step,0);
     if(blocked||shot.resolved||shot.traveled>=shot.distance){if(!blocked&&!shot.resolved&&shot.traveled>=shot.distance)playRicochet();scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();warProjectiles.splice(warProjectiles.indexOf(shot),1);}
   }
   for(const effect of [...warBlastEffects]){const progress=(performance.now()-effect.started)/effect.duration;if(progress>=1){scene.remove(effect.mesh);effect.mesh.geometry.dispose();effect.mesh.material.dispose();warBlastEffects.splice(warBlastEffects.indexOf(effect),1);}else{effect.mesh.scale.setScalar(.2+progress*4.4);effect.mesh.material.opacity=.62*(1-progress);}}
-  if(warSocket?.readyState===WebSocket.OPEN&&warPhase==='running'&&now-warLastInputAt>80){warLastInputAt=now;const visibleEnemies=[];for(const enemy of enemies){const origin=enemy.position.clone().add(new THREE.Vector3(0,.98,0)),target=camera.position.clone().add(new THREE.Vector3(0,-.32,0)),offset=target.clone().sub(origin),distance=offset.length();if(distance>45)continue;raycaster.set(origin,offset.normalize());raycaster.far=Math.max(.01,distance-.2);if(!intersectFirst(houseMeshes)[0])visibleEnemies.push(enemy.userData.warId);}const feet=feetPosition();sendWar('input',{x:feet.x,y:feet.y-actorGroundClearance,z:feet.z,yaw:aimYaw,pitch:aimPitch,visibleEnemies});}
+  if(warSocket?.readyState===WebSocket.OPEN&&warPhase==='running'&&now-warLastInputAt>80){warLastInputAt=now;const visibleEnemies=[];for(const enemy of enemies){const origin=enemy.position.clone().add(new THREE.Vector3(0,warActorHeight*.72,0)),target=camera.position.clone().add(new THREE.Vector3(0,-warPlayerHeight*.28,0)),offset=target.clone().sub(origin),distance=offset.length();if(distance>45)continue;raycaster.set(origin,offset.normalize());raycaster.far=Math.max(.01,distance-.2);if(!intersectFirst(houseMeshes)[0])visibleEnemies.push(enemy.userData.warId);}const feet=feetPosition();sendWar('input',{x:feet.x,y:feet.y-actorGroundClearance,z:feet.z,yaw:aimYaw,pitch:aimPitch,visibleEnemies,crouched:warCrouched,actorHeight:warPlayerHeight});}
   if(warCullAt<now){warCullAt=now+500;for(const mesh of houseMeshes){if(!mesh.geometry.boundingSphere)mesh.geometry.computeBoundingSphere();const sphere=mesh.geometry.boundingSphere.clone().applyMatrix4(mesh.matrixWorld);mesh.visible=camera.position.distanceTo(sphere.center)-sphere.radius<88;}for(const enemy of enemies)if(enemy.userData.warId)enemy.visible=camera.position.distanceTo(enemy.position)<88;for(const remote of warRemotePlayers.values())remote.model.visible=camera.position.distanceTo(remote.model.position)<88;}
 }
 let warCullAt=0;
 function canMove(nextFeet,delta) {
   if(nextFeet.x<mapBox.min.x-1||nextFeet.x>mapBox.max.x+1||nextFeet.z<mapBox.min.z-1||nextFeet.z>mapBox.max.z+1)return false;
-  const distance=delta.length(),direction=delta.clone().normalize(),center=new THREE.Vector3(camera.position.x,camera.position.y-.58,camera.position.z);
+  const playerHeight=mode==='war'?warPlayerHeight:warActorHeight,distance=delta.length(),direction=delta.clone().normalize(),center=new THREE.Vector3(camera.position.x,camera.position.y-eyeHeight+playerHeight*.5,camera.position.z);
   raycaster.far=distance+playerSize.x*.52;
-  // A single ray can hit the theater's merged seat/floor triangles and report
+  // A single ray can hit the arena's merged obstacle/floor triangles and report
   // a false wall. Require the obstacle to block both the lower body and chest
   // rays before stopping the player; this still blocks full-height walls.
   let blockedHeights=0;
@@ -656,7 +697,7 @@ function escapeHTML(value){return String(value).replace(/[&<>"']/g,c=>({ '&':'&a
 function tick() {
   requestAnimationFrame(tick);const dt=Math.min(clock.getDelta(),.05);
   if(running){elapsed+=dt;remaining-=dt;movePlayer(dt);recoilPitch*=Math.exp(-7.8*dt);recoilYaw*=Math.exp(-9.5*dt);gunKick*=Math.exp(-17*dt);camera.rotation.order='YXZ';camera.rotation.x=THREE.MathUtils.clamp(aimPitch+recoilPitch,-1.35,1.35);camera.rotation.y=aimYaw+recoilYaw;camera.rotation.z=THREE.MathUtils.clamp(recoilYaw*1.8,-.035,.035);const targetFov=aimHeld?48:72;camera.fov=THREE.MathUtils.damp(camera.fov,targetFov,12,dt);camera.updateProjectionMatrix();if(reloading)updateReloadAnimation();else if(gunRoot&&heldItem==='gun'){gunRoot.position.set(.2,-.25-gunKick*.075,-.52+gunKick*.2);gunRoot.rotation.set(-.08-gunKick*.12,-.23+recoilYaw*.25,0);}for(const item of [shieldRoot,grenadeRoot])if(item?.visible&&item.userData.raisedAt){const t=THREE.MathUtils.clamp((performance.now()-item.userData.raisedAt)/340,0,1),ease=1-(1-t)*(1-t);item.position.y=THREE.MathUtils.lerp(item.userData.readyPosition.y-(item===shieldRoot?1.15:.34),item.userData.readyPosition.y,ease);if(t>=1)item.userData.raisedAt=0;}
-    if(mode==='practice'){if(level===2&&practiceTarget)practiceTarget.position.x=Math.sin(elapsed*2.4)*10;moveTarget(false);if(remaining<=0)finish(false);}
+    if(mode==='practice'){if(level===2&&practiceTarget)practiceTarget.position.x=Math.sin(elapsed*2.4)*10;if(level===4&&practiceTarget)practiceTarget.position.x=Math.sin(elapsed*3.8)*13;moveTarget(false);if(remaining<=0)finish(false);}
     else if(mode==='war'){grenadePhysicsTick(dt);warTick(dt);}
     else if(remaining<=0)finish(true);else{grenadePhysicsTick(dt);cqbTick(dt);}
     updateUI();
@@ -668,13 +709,13 @@ document.querySelectorAll('.map-button').forEach(button=>button.addEventListener
 document.querySelector('.map-back').addEventListener('click',()=>show(ui.landing));document.querySelector('.back').addEventListener('click',()=>show(mode==='cqb'?ui.mapScreen:ui.landing));$('begin-button').addEventListener('click',start);$('return-button').addEventListener('click',()=>{resetWorld();scene.fog=new THREE.Fog(0x6e7678,42,170);ui.hud.style.display='none';show(ui.landing);});
 document.addEventListener('pointerlockchange',()=>{pointer=document.pointerLockElement===renderer.domElement;if(!pointer)aimHeld=false;});renderer.domElement.addEventListener('click',()=>{if(running&&!pointer)lockPointer();});
 document.addEventListener('mousemove',event=>{if(!pointer)return;aimYaw-=event.movementX*.002;aimPitch=THREE.MathUtils.clamp(aimPitch-event.movementY*.002,-1.35,1.35);});
-document.addEventListener('mousedown',event=>{if(event.button===0)fire();if(event.button===2&&running){if(heldItem==='grenade')throwGrenade();else if(heldItem==='gun'){aimHeld=true;ui.crosshair.style.transform='translate(-50%,-50%) scale(.65)';}}});document.addEventListener('mouseup',event=>{if(event.button===2&&heldItem==='gun'){aimHeld=false;ui.crosshair.style.transform='translate(-50%,-50%)';}});document.addEventListener('contextmenu',event=>event.preventDefault());
-document.addEventListener('keydown',event=>{if(mode==='war'&&running&&['KeyW','KeyA','KeyS','KeyD'].includes(event.code))event.preventDefault();if(event.code==='Space'){event.preventDefault();if((mode==='cqb'||mode==='war')&&running&&grounded&&health>0&&!event.repeat){verticalVelocity=6.2;grounded=false;} }keys.add(event.code);if(event.repeat)return;if(event.code==='KeyR')reload();if(event.code==='KeyF')toggleShield();if(event.code==='Digit1')changeGun('m1911');if(event.code==='Digit2')changeGun('bren2');if(event.code==='Digit3')selectGrenade();});document.addEventListener('keyup',event=>keys.delete(event.code));
+document.addEventListener('mousedown',event=>{if(event.button===0){fire();if(currentGun==='bren2'&&ammo.bren2>0)startAutoFire();}if(event.button===2&&running){if(heldItem==='grenade')throwGrenade();else if(heldItem==='gun'){aimHeld=true;ui.crosshair.style.transform='translate(-50%,-50%) scale(.65)';}}});document.addEventListener('mouseup',event=>{if(event.button===0)stopAutoFire();if(event.button===2&&heldItem==='gun'){aimHeld=false;ui.crosshair.style.transform='translate(-50%,-50%)';}});document.addEventListener('contextmenu',event=>event.preventDefault());
+document.addEventListener('keydown',event=>{if(mode==='war'&&running&&['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight'].includes(event.code))event.preventDefault();if(event.code==='ShiftLeft'||event.code==='ShiftRight'){setWarCrouched(true);}if(event.code==='Space'){event.preventDefault();if((mode==='cqb'||mode==='war')&&running&&grounded&&health>0&&!event.repeat){verticalVelocity=6.2;grounded=false;} }keys.add(event.code);if(event.repeat)return;if(event.code==='KeyR')reload();if(event.code==='KeyF')toggleShield();if(event.code==='Digit1')changeGun('m1911');if(event.code==='Digit2')changeGun('bren2');if(event.code==='Digit3')selectGrenade();});document.addEventListener('keyup',event=>{keys.delete(event.code);if(event.code==='ShiftLeft'||event.code==='ShiftRight')setWarCrouched(false);});
 // Capture movement keys before browser/page controls can consume them.
 const movementKeyCodes=new Map([['KeyW','KeyW'],['KeyA','KeyA'],['KeyS','KeyS'],['KeyD','KeyD'],['w','KeyW'],['a','KeyA'],['s','KeyS'],['d','KeyD'],['W','KeyW'],['A','KeyA'],['S','KeyS'],['D','KeyD']]);
 window.addEventListener('keydown',event=>{if(mode!=='war'||!running)return;const code=movementKeyCodes.get(event.code)||movementKeyCodes.get(event.key);if(code){event.preventDefault();warMovementKeys.add(code);keys.add(code);}},{capture:true});
 window.addEventListener('keyup',event=>{const code=movementKeyCodes.get(event.code)||movementKeyCodes.get(event.key);if(code){warMovementKeys.delete(code);keys.delete(code);}},{capture:true});
-window.addEventListener('blur',()=>{keys.clear();warMovementKeys.clear();});
+window.addEventListener('blur',()=>{keys.clear();warMovementKeys.clear();stopAutoFire();setWarCrouched(false);});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 tick();
 
@@ -688,7 +729,7 @@ async function reportStationPresence() {
     const response = await fetch('/api/presence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Soldiers-Session': rankSessionToken },
-      body: JSON.stringify({ name: playerName, mode: reportedMode, map: mode === 'war' ? 'THEATER' : mode === 'cqb' ? selectedMap : '-', state, visible: document.visibilityState === 'visible' }),
+      body: JSON.stringify({ name: playerName, mode: reportedMode, map: mode === 'war' ? 'ARENA' : mode === 'cqb' ? selectedMap : '-', state, visible: document.visibilityState === 'visible' }),
       cache: 'no-store',
     });
     if (!response.ok) return;
